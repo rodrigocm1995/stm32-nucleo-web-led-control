@@ -1,0 +1,462 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="Interfaz premium de control serial web para tarjeta de desarrollo STM32 NUCLEO-F303RE. Enciende y apaga el LED LD2 usando la Web Serial API.">
+    <title>STM32 Nucleo-F303RE LED Controller</title>
+    <!-- Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+    <!-- Stylesheet -->
+    <link rel="stylesheet" href="style.css">
+    <!-- PrismJS Theme for beautiful code highlighting -->
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism-tomorrow.min.css" rel="stylesheet" />
+</head>
+<body>
+    <div class="glass-bg-decor decor-1"></div>
+    <div class="glass-bg-decor decor-2"></div>
+
+    <div class="app-container">
+        <!-- Error Banner for Web Serial Support -->
+        <div id="browser-warning" class="warning-banner hidden">
+            <div class="warning-icon">⚠️</div>
+            <div class="warning-text">
+                <strong>Navegador no compatible:</strong> Tu navegador actual no soporta la <em>Web Serial API</em>. 
+                Por favor, abre esta interfaz en <strong>Google Chrome</strong> o <strong>Microsoft Edge</strong> para poder comunicarte con la tarjeta Nucleo.
+            </div>
+        </div>
+
+        <!-- Main Header -->
+        <header class="app-header">
+            <div class="badge">STM32 Hardware Control</div>
+            <h1 id="main-title">NUCLEO-F303RE Controller</h1>
+            <p class="subtitle">Controla el LED de usuario (LD2) en tiempo real mediante comunicación serie a través del navegador.</p>
+        </header>
+
+        <div class="dashboard-grid">
+            <!-- Connection Card -->
+            <section id="card-connection" class="card glass-card" aria-labelledby="conn-heading">
+                    <div class="card-header">
+                        <div class="card-icon connection-icon"></div>
+                        <h2 id="conn-heading">Conexión Serie</h2>
+                    </div>
+                    
+                    <div class="card-body">
+                        <div class="status-indicator-wrapper">
+                            <span class="status-label">Estado de la tarjeta:</span>
+                            <div class="status-badge disconnected" id="connection-status">
+                                <span class="status-dot"></span>
+                                <span class="status-text" id="status-text">Desconectado</span>
+                            </div>
+                        </div>
+
+                        <div class="form-group">
+                            <label for="baudrate-select">Velocidad de Baudios (Baud Rate):</label>
+                            <select id="baudrate-select" class="custom-select">
+                                <option value="9600">9600 bps</option>
+                                <option value="19200">19200 bps</option>
+                                <option value="38400">38400 bps</option>
+                                <option value="57600">57600 bps</option>
+                                <option value="115200" selected>115200 bps (Recomendado)</option>
+                            </select>
+                        </div>
+
+                        <div class="action-buttons">
+                            <button id="btn-connect" class="btn btn-primary">
+                                <span class="btn-icon">🔌</span>
+                                <span class="btn-text">Conectar Placa</span>
+                            </button>
+                            <button id="btn-sync" class="btn btn-secondary hidden" title="Sincronizar estado del LED">
+                                <span class="btn-icon">🔄</span>
+                                <span class="btn-text">Sincronizar</span>
+                            </button>
+                            <button id="btn-disconnect" class="btn btn-secondary hidden">
+                                <span class="btn-icon">❌</span>
+                                <span class="btn-text">Desconectar</span>
+                            </button>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- LED Control Card -->
+                <section id="card-led" class="card glass-card" aria-labelledby="led-heading">
+                    <div class="card-header">
+                        <div class="card-icon led-icon"></div>
+                        <h2 id="led-heading">Control de LED (LD2)</h2>
+                    </div>
+                    
+                    <div class="card-body control-body">
+                        <div class="led-visual-container">
+                            <!-- Virtual LED indicator in UI -->
+                            <div class="led-light" id="virtual-led">
+                                <div class="led-inner-glow"></div>
+                            </div>
+                            <span class="led-state-label" id="led-state-text">LED APAGADO</span>
+                        </div>
+
+                        <!-- Premium Toggle Switch -->
+                        <div class="toggle-container">
+                            <span class="toggle-desc">Enviar comando serie ('1' / '0'):</span>
+                            <label class="switch" for="led-toggle">
+                                <input type="checkbox" id="led-toggle" disabled>
+                                <span class="slider round"></span>
+                            </label>
+                        </div>
+                    </div>
+                </section>
+
+            <!-- Terminal Console Card -->
+            <section id="card-terminal" class="card glass-card terminal-card" aria-labelledby="term-heading">
+                    <div class="card-header">
+                        <div class="card-icon console-icon"></div>
+                        <h2 id="term-heading">Consola Serial</h2>
+                        <button id="btn-clear-console" class="btn-clear">Limpiar</button>
+                    </div>
+                    <div class="card-body terminal-body">
+                        <div class="terminal" id="serial-terminal">
+                            <div class="terminal-line system-msg">[Sistema] Interfaz cargada. Esperando conexión...</div>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- Firmware Card -->
+                <section id="card-code" class="card glass-card code-card" aria-labelledby="code-heading">
+                    <div class="card-header">
+                        <div class="card-icon code-title-icon"></div>
+                        <h2 id="code-heading">Firmware de la Tarjeta (STM32Cube HAL)</h2>
+                    </div>
+                    
+                    <div class="card-body code-body">
+                        <div class="code-container">
+                            <pre class="language-c"><code class="language-c">/* USER CODE BEGIN Header */
+/**
+  ******************************************************************************
+  * @file           : main.c
+  * @brief          : Main program body
+  ******************************************************************************
+  * @attention
+  *
+  * Copyright (c) 2026 STMicroelectronics.
+  * All rights reserved.
+  *
+  * This software is licensed under terms that can be found in the LICENSE file
+  * in the root directory of this software component.
+  * If no LICENSE file comes with this software, it is provided AS-IS.
+  *
+  ******************************************************************************
+  */
+/* USER CODE END Header */
+/* Includes ------------------------------------------------------------------*/
+#include "main.h"
+#include "stm32f303xe.h"
+#include "stm32f3xx_hal.h"
+#include "stm32f3xx_hal_def.h"
+#include "stm32f3xx_hal_gpio.h"
+#include "stm32f3xx_hal_uart.h"
+#include &lt;stdio.h&gt;
+
+/* Private includes ----------------------------------------------------------*/
+/* USER CODE BEGIN Includes */
+#include &lt;stdio.h&gt;
+#include &lt;stdlib.h&gt;
+#include &lt;string.h&gt;
+/* USER CODE END Includes */
+
+/* Private typedef -----------------------------------------------------------*/
+/* USER CODE BEGIN PTD */
+
+/* USER CODE END PTD */
+
+/* Private define ------------------------------------------------------------*/
+/* USER CODE BEGIN PD */
+
+/* USER CODE END PD */
+
+/* Private macro -------------------------------------------------------------*/
+/* USER CODE BEGIN PM */
+
+/* USER CODE END PM */
+
+/* Private variables ---------------------------------------------------------*/
+UART_HandleTypeDef huart2;
+
+/* USER CODE BEGIN PV */
+uint8_t userInput = 0;
+uint8_t buffer[1];
+char tx_data[50];
+//uint8_t msg[50];
+/* USER CODE END PV */
+
+/* Private function prototypes -----------------------------------------------*/
+void SystemClock_Config(void);
+static void MX_GPIO_Init(void);
+static void MX_USART2_UART_Init(void);
+/* USER CODE BEGIN PFP */
+char readUserInput(void);
+uint8_t processUserInput(char userInput);
+/* USER CODE END PFP */
+
+/* Private user code ---------------------------------------------------------*/
+/* USER CODE BEGIN 0 */
+
+/* USER CODE END 0 */
+
+/**
+  * @brief  The application entry point.
+  * @retval int
+  */
+int main(void)
+{
+
+  /* USER CODE BEGIN 1 */
+
+  /* USER CODE END 1 */
+
+  /* MCU Configuration--------------------------------------------------------*/
+
+  /* Reset of all peripherals, Initializes the Flash interface and the Systick. */
+  HAL_Init();
+
+  /* USER CODE BEGIN Init */
+
+  /* USER CODE END Init */
+
+  /* Configure the system clock */
+  SystemClock_Config();
+
+  /* USER CODE BEGIN SysInit */
+
+  /* USER CODE END SysInit */
+
+  /* Initialize all configured peripherals */
+  MX_GPIO_Init();
+  MX_USART2_UART_Init();
+  /* USER CODE BEGIN 2 */
+
+  /* USER CODE END 2 */
+
+  /* Infinite loop */
+  /* USER CODE BEGIN WHILE */
+  while (1)
+  {
+	  userInput = readUserInput();
+	  processUserInput(userInput);
+	  HAL_Delay(1);
+
+    /* USER CODE END WHILE */
+
+    /* USER CODE BEGIN 3 */
+  }
+  /* USER CODE END 3 */
+}
+
+/**
+  * @brief System Clock Configuration
+  * @retval None
+  */
+void SystemClock_Config(void)
+{
+  RCC_OscInitTypeDef RCC_OscInitStruct = {0};
+  RCC_ClkInitTypeDef RCC_ClkInitStruct = {0};
+  RCC_PeriphCLKInitTypeDef PeriphClkInit = {0};
+
+  /** Initializes the RCC Oscillators according to the specified parameters
+  * in the RCC_OscInitTypeDef structure.
+  */
+  RCC_OscInitStruct.OscillatorType = RCC_OSCILLATORTYPE_HSI;
+  RCC_OscInitStruct.HSIState = RCC_HSI_ON;
+  RCC_OscInitStruct.HSICalibrationValue = RCC_HSICALIBRATION_DEFAULT;
+  RCC_OscInitStruct.PLL.PLLState = RCC_PLL_ON;
+  RCC_OscInitStruct.PLL.PLLSource = RCC_PLLSOURCE_HSI;
+  RCC_OscInitStruct.PLL.PLLMUL = RCC_PLL_MUL9;
+  RCC_OscInitStruct.PLL.PREDIV = RCC_PREDIV_DIV1;
+  if (HAL_RCC_OscConfig(&RCC_OscInitStruct) != HAL_OK)
+  {
+    Error_Handler();
+  }
+
+  /** Initializes the CPU, AHB and APB buses clocks
+  */
+  RCC_ClkInitStruct.ClockType = RCC_CLOCKTYPE_HCLK|RCC_CLOCKTYPE_SYSCLK
+                              |RCC_CLOCKTYPE_PCLK1|RCC_CLOCKTYPE_PCLK2;
+  RCC_ClkInitStruct.SYSCLKSource = RCC_SYSCLKSOURCE_PLLCLK;
+  RCC_ClkInitStruct.AHBCLKDivider = RCC_SYSCLK_DIV1;
+  RCC_ClkInitStruct.APB1CLKDivider = RCC_HCLK_DIV2;
+  RCC_ClkInitStruct.APB2CLKDivider = RCC_HCLK_DIV1;
+
+  if (HAL_RCC_ClockConfig(&RCC_ClkInitStruct, FLASH_LATENCY_2) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  PeriphClkInit.PeriphClockSelection = RCC_PERIPHCLK_USART2;
+  PeriphClkInit.Usart2ClockSelection = RCC_USART2CLKSOURCE_PCLK1;
+  if (HAL_RCCEx_PeriphCLKConfig(&PeriphClkInit) != HAL_OK)
+  {
+    Error_Handler();
+  }
+}
+
+/**
+  * @brief USART2 Initialization Function
+  * @param None
+  * @retval None
+  */
+static void MX_USART2_UART_Init(void)
+{
+
+  /* USER CODE BEGIN USART2_Init 0 */
+
+  /* USER CODE END USART2_Init 0 */
+
+  /* USER CODE BEGIN USART2_Init 1 */
+
+  /* USER CODE END USART2_Init 1 */
+  huart2.Instance = USART2;
+  huart2.Init.BaudRate = 115200;
+  huart2.Init.WordLength = UART_WORDLENGTH_8B;
+  huart2.Init.StopBits = UART_STOPBITS_1;
+  huart2.Init.Parity = UART_PARITY_NONE;
+  huart2.Init.Mode = UART_MODE_TX_RX;
+  huart2.Init.HwFlowCtl = UART_HWCONTROL_NONE;
+  huart2.Init.OverSampling = UART_OVERSAMPLING_16;
+  huart2.Init.OneBitSampling = UART_ONE_BIT_SAMPLE_DISABLE;
+  huart2.AdvancedInit.AdvFeatureInit = UART_ADVFEATURE_NO_INIT;
+  if (HAL_UART_Init(&huart2) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /* USER CODE BEGIN USART2_Init 2 */
+
+  /* USER CODE END USART2_Init 2 */
+
+}
+
+/**
+  * @brief GPIO Initialization Function
+  * @param None
+  * @retval None
+  */
+static void MX_GPIO_Init(void)
+{
+  GPIO_InitTypeDef GPIO_InitStruct = {0};
+  /* USER CODE BEGIN MX_GPIO_Init_1 */
+
+  /* USER CODE END MX_GPIO_Init_1 */
+
+  /* GPIO Ports Clock Enable */
+  __HAL_RCC_GPIOC_CLK_ENABLE();
+  __HAL_RCC_GPIOF_CLK_ENABLE();
+  __HAL_RCC_GPIOA_CLK_ENABLE();
+  __HAL_RCC_GPIOB_CLK_ENABLE();
+
+  /*Configure GPIO pin Output Level */
+  HAL_GPIO_WritePin(LD2_GPIO_Port, LD2_Pin, GPIO_PIN_RESET);
+
+  /*Configure GPIO pin : B1_Pin */
+  GPIO_InitStruct.Pin = B1_Pin;
+  GPIO_InitStruct.Mode = GPIO_MODE_IT_FALLING;
+  GPIO_InitStruct.Pull = GPIO_NOPULL;
+  HAL_GPIO_Init(B1_GPIO_Port, &GPIO_InitStruct);
+
+  /*Configure GPIO pin : LD2_Pin */
+  GPIO_InitStruct.Pin = LD2_Pin;
+  GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
+  GPIO_InitStruct.Pull = GPIO_NOPULL;
+  GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
+  HAL_GPIO_Init(LD2_GPIO_Port, &GPIO_InitStruct);
+
+  /* USER CODE BEGIN MX_GPIO_Init_2 */
+
+  /* USER CODE END MX_GPIO_Init_2 */
+}
+
+/* USER CODE BEGIN 4 */
+char readUserInput(void)
+{
+	char readBuf[1];
+
+	HAL_UART_Receive(&huart2, (uint8_t *)readBuf, 1, 100);
+	//uint8_t result = atoi(readBuf);
+	//sprintf(result_arr, "Result = %d\r\n", result);
+	//HAL_UART_Transmit(&huart2, (uint8_t *)result_arr, strlen(result_arr), 100);
+	return readBuf[0];
+}
+
+uint8_t processUserInput(char userInput)
+{
+	//sprintf(msg, "%d", userInput);
+
+	switch(userInput)
+	{
+	case '0':
+		HAL_GPIO_WritePin(LD2_GPIO_Port, LD2_Pin, GPIO_PIN_RESET);
+		sprintf(tx_data, "LED Apagado\r\n");
+		HAL_UART_Transmit(&huart2, (uint8_t *)tx_data, strlen(tx_data), 100);
+		break;
+	case '1':
+		HAL_GPIO_WritePin(LD2_GPIO_Port, LD2_Pin, GPIO_PIN_SET);
+		sprintf(tx_data, "LED Encendido\r\n");
+		HAL_UART_Transmit(&huart2, (uint8_t *)tx_data, strlen(tx_data), 100);
+		break;
+	case '?':
+		if ((GPIOA-&gt;ODR &amp; GPIO_PIN_5) != 0){
+			sprintf(tx_data, "LED Encendido\r\n");
+			HAL_UART_Transmit(&huart2, (uint8_t *)tx_data, strlen(tx_data), 100);
+		}else {
+			sprintf(tx_data, "LED Apagado\r\n");
+			HAL_UART_Transmit(&huart2, (uint8_t *)tx_data, strlen(tx_data), 100);
+		}
+	}
+
+	return 1;
+}
+/* USER CODE END 4 */
+
+/**
+  * @brief  This function is executed in case of error occurrence.
+  * @retval None
+  */
+void Error_Handler(void)
+{
+  /* USER CODE BEGIN Error_Handler_Debug */
+  /* User can add his own implementation to report the HAL error return state */
+  __disable_irq();
+  while (1)
+  {
+  }
+  /* USER CODE END Error_Handler_Debug */
+}
+#ifdef USE_FULL_ASSERT
+/**
+  * @brief  Reports the name of the source file and the source line number
+  *         where the assert_param error has occurred.
+  * @param  file: pointer to the source file name
+  * @param  line: assert_param error line source number
+  * @retval None
+  */
+void assert_failed(uint8_t *file, uint32_t line)
+{
+  /* USER CODE BEGIN 6 */
+  /* User can add his own implementation to report the file name and line number,
+     ex: printf("Wrong parameters value: file %s on line %d\r\n", file, line) */
+  /* USER CODE END 6 */
+}
+#endif /* USE_FULL_ASSERT */</code></pre>
+                        </div>
+                    </div>
+                </section>
+        </div>
+
+        <footer class="app-footer">
+            <p>STM32 Nucleo-F303RE LED Controller © 2026 | Desarrollado con Web Serial API</p>
+        </footer>
+    </div>
+
+    <!-- Script -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-c.min.js"></script>
+    <script src="app.js"></script>
+</body>
+</html>
